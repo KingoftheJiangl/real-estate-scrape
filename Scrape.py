@@ -4,75 +4,69 @@ import xlrd, xlwt
 import xlutils
 from xlutils.copy import copy
 
-# zillow_search Procedure - Takes an address in form of [address, city, state, zip], bings the address for zillow and returns property type
-# procedure url_filter checks zillow, trulia etc's url to ensure the list address and address that url refers to are one and the same(may need multiple)
-
-
-
-# addresses - list collects addresses from excel sheet
-addresses = []
-input_workbook = xlrd.open_workbook("C:\Users\Taizu\PyDev\\real-estate-scrape\Compliance_Report_10 - Copy (4).xls")
+# Grab data from workbook
+input_workbook = xlrd.open_workbook("C:\Users\Taizu\PyDev\\real-estate-scrape\Compliance_Report.xls")
 input_sheet = input_workbook.sheet_by_index(0)
-# uses xlutils to copy workbook from xlrd object to xlwt object and reads first sheet
+
+# Copy workbook from xlrd object to xlwt object and reads first sheet
 write_book = copy(input_workbook)
 write_sheet = write_book.get_sheet(0)
-# Loops through addresses in sheet and appends to list object addresses
+# write_sheet = (copy(xlrd.open_workbook("Longfei.xls"))).get_sheet(0)
+
+# Define apt/pobox string filters
+apt_list = [' apt', ' ste', ' suite', ' apartment', 'po ', 'p.o.', 'po.', 'box']
+# Define engines
+engines = {'zillow': {"link": "http://www.zillow.com/homedetails", "property_tag": "PropertyType", "property_offset": 16}, 'trulia': {'link': 'http://www.trulia.com/', 'property_tag': "Property type:", "property_offset": 10}}
+
+# Loops through addresses in sheet and conditionally searches for address
+# Writes to new excel file
 for rownum in range(input_sheet.nrows-2):
-	# create sublist that contains address values: address1, city, state, zip
-	sublist = [str(input_sheet.cell_value(rownum+2, 9)), str(input_sheet.cell_value(rownum+2, 11)), str(input_sheet.cell_value(rownum+2, 12)), str(input_sheet.cell_value(rownum+2, 13)[:5])]
-	addresses.append(sublist)
-print addresses
-
-
-# address_types is a list that stores the address types in the list addresses after crawling the web
-address_types = []
-
-# Loop through addresses via bing for address types: zillow, trulia, homes.com
-for address in addresses:
 	# returns address type result for zillow address query per address
-	if address[0].lower().find(" apt ") > -1 or address[0].lower().find(" ste ") > -1 or address[0].lower().find(" suite ") > -1: 
-		address_types.append("Apartment")
-	elif address[0].find("po ") > -1 or address[0].find(" box ") > -1:
-		address_types.append("PO Box")
 
-# TODO make this loop through zillow trulia and homes procedures as needed
+	# Extract useful vars
+
+	address_dict = {street_address = str(input_sheet.cell_value(rownum+2, 9)), street_number = street_address.split(' ')[0], street_name = street_address.split(' ')[1], city = str(input_sheet.cell_value(rownum+2, 11)), state =  str(input_sheet.cell_value(rownum+2, 12)), zip_code = str(input_sheet.cell_value(rownum+2, 13)[:5])}
+
+	# Built generic search URL
+	url_front = str("http://www.bing.com/search?q=" + address_dict[street_address].replace(' ', '+')) + '+' + address_dict[city].replace(' ', '+')) + '+' + address_dict[state].replace(' ', '+')) + '+' + address_dict[zip_code].replace(' ', '+')).replace('++', '+'))
+
+	# Filter out apt/po searches
+	if any(str(address_dict[street_address]).lower().find(word) != -1 for word in apt_list):
+		write_sheet.write(rownum+2, 2, "Apartment/PO Box")
+
+	# Core search: Try zillow, then trulia
 	else:
-		address_types.append(zillow_search(address))
-	
-print address_types
+		if search("zillow") != -1:
+			write_sheet.write(rownum+2, 2, follow_link(result))
+		elif search("trulia") != -1:
+			write_sheet.write(rownum+2, 2, follow_link(result))
+		else: write_sheet.write(rownum+2, 2, "Cannot find")
 
+# ###############################################
 
+# Save the book
+write_book.save("C:\Users\Taizu\PyDev\\real-estate-scrape\Compliance_Report_10_Processed.xls")
 
-# Writes address_types list to correspondng rows in compliance report in the 3rd column.
-for address_number, address in enumerate(input_sheet.col(0)):
-	if not address_number:
-		continue
-	if address_number < 2:
-		continue
-	write_sheet.write(address_number,2,address_types[address_number-2])
-	write_book.save("C:\Users\Taizu\PyDev\\real-estate-scrape\Compliance_Report_10 - Copy (4).xls")
+# Utility functions
+def search(engine):
+	bing_search = urllib2.urlopen(url_front+"+"+engine).read()
 
-def url_filter(verify_address, url_to_verify):
-	print "lol"
+	# If -1 or doesn't find required stuff (which you may or may not want to put in another function, depending)
+	if bing_search.find(engines[engine]["link"]) == -1:
+		return -1
+	else:
+		bing_start = bing_search.find(engines[engine]["link"])
+		bing_end = bing_search[bing_start:].find('"')+bing_start
+		engine_link = bing_search_zillow[bing_start:bing_end]
+		if address_dict['street_number'] in engine_link and b in engine_link and c in engine_link and (d or e in engine_link):
+			return engine_link
+		else:
+			return -1
 
-
-def zillow_search(input_address_in_list_form):
-	bing_search_zillow = urllib2.urlopen(str("http://www.bing.com/search?q=" +str(address[0].replace(' ', '+')) + '+' + str(address[1].replace(' ', '+')) + '+' + str(address[2].replace(' ', '+')) + '+' + str(address[3].replace(' ', '+')) + '+' + "+Zillow").replace('++', '+')).read()
-
-	# if we don't find the beginning tag for zillow for the address, we move on to the next address. this will break when we introduce trulia and homes.com
-
-	if bing_search_zillow.find("http://www.zillow.com/homedetails") == -1:
-		property_type = "No address"
-		return property_type
-	elif bing_search_zillow.find("http://www.zillow.com/homedetails") != -1:
-		# finds starting and ending positions for the zillow page on Bing search
-
-		bing_start = bing_search_zillow.find("http://www.zillow.com/homedetails")
-		bing_end = bing_search_zillow[bing_start:].find('"')+bing_start
-
-		# Open first Zillow link
-		zillow_result = urllib2.urlopen(bing_search_zillow[bing_start:bing_end]).read()
-		Property_Start = zillow_result.find('PropertyType", "')+16
-		Property_End = zillow_result[Property_Start:].find('"')+Property_Start
-		property_type = zillow_result[Property_Start:Property_End]
-		return property_type
+def follow_link(result):
+	# Open first Zillow link
+	result = urllib2.urlopen(bing_search_zillow[bing_start:bing_end]).read()
+	Property_Start = result.find(engines[engine]["property_type"], engines[engine]["property_offset"])
+	Property_End = result[Property_Start:].find('"')+Property_Start
+	property_type = result[Property_Start:Property_End]
+	return property_type
